@@ -339,7 +339,7 @@ namespace saba
 					{
 						path = PathUtil::Combine(dir, requested_source);
 						glslFile.Open(path);
-						if (!glslFile.IsOpen())
+						if (glslFile.IsOpen())
 						{
 							break;
 						}
