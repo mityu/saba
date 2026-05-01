@@ -1,35 +1,91 @@
 name: saba-build-actions
-on: [push]
-jobs:
-  build-gcc:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - name: Install dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y cmake libbullet-dev libglu1-mesa-dev libx11-dev libxxf86vm-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libglfw3-dev
-      - name: build
-        run: |
-          mkdir build
-          cd build
-          cmake ..
-          make -j2
+on:
+  workflow_dispatch:
+  push:
+    paths-ignore:
+      - '*.md'
+      - LICENSE
+      - license/*
+      - images/*
 
-  build-clang:
-    runs-on: ubuntu-latest
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }} with ${{ matrix.compiler }} on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+        compiler:
+          - gcc
+          - clang
+        target:
+          - all
+          - Saba
+        include:
+          - target: all
+            deps-ubuntu: >-
+              libbullet-dev libglu1-mesa-dev libx11-dev libxxf86vm-dev
+              libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libglfw3-dev
+            deps-macos: bullet glfw
+            deps-windows: >-
+              mingw-w64-ucrt-x86_64-bullet
+              mingw-w64-ucrt-x86_64-glfw
+            # TODO: Specify build options and what to run (e.g. tests) after build
+          - target: Saba
+            # TODO: Remove glfw from deps.
+            deps-ubuntu: >-
+              libbullet-dev libglu1-mesa-dev libx11-dev libxxf86vm-dev
+              libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libglfw3-dev
+            deps-macos: bullet glfw
+            deps-windows: >-
+              mingw-w64-ucrt-x86_64-bullet
+              mingw-w64-ucrt-x86_64-glfw
+
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+
+    env:
+      CC: ${{ matrix.compiler }}
+      CXX: ${{ matrix.compiler == 'gcc' && 'g++' || 'clang++' }}
     steps:
       - uses: actions/checkout@v6
-      - name: Install dependencies
+      - if: ${{ startsWith(matrix.os, 'ubuntu') }}
         run: |
           sudo apt update
-          sudo apt install -y cmake libbullet-dev libglu1-mesa-dev libx11-dev libxxf86vm-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libglfw3-dev
-      - name: build
-        env:
-          C_COMPILER: clang
-          CXX_COMPILER: clang++
+          sudo apt install -y cmake ${{ matrix.deps-ubuntu }}
+      - if: ${{ startsWith(matrix.os, 'macos') }}
+        run: |
+          brew install --formula cmake
+          brew install ${{ matrix.deps-macos }}
+      - if: ${{ startsWith(matrix.os, 'windows') }}
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          release: false
+          install: >-
+            mingw-w64-ucrt-x86_64-binutils
+            mingw-w64-ucrt-x86_64-${{ matrix.compiler }}
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-diffutils
+            ${{ matrix.deps-windows }}
+      - if: ${{ ! startsWith(matrix.os, 'windows') }}
+        name: Build library (target=${{ matrix.target }})
         run: |
           mkdir build
           cd build
           cmake ..
-          make -j2
+          cmake --build . -t ${{ matrix.target }} -j
+      - if: ${{ startsWith(matrix.os, 'windows') }}
+        name: Build library on Windows (target=${{ matrix.target }})
+        shell: msys2 {0}
+        run: |
+          mkdir build
+          cd build
+          cmake ..
+          cmake --build . -t ${{ matrix.target }} -j
